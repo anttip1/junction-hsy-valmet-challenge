@@ -39,15 +39,18 @@ def run_step(
         water_volume_m3 + inflow_to_tunnel_m3_15min - prev_outflow_m3_15min
     )
 
+    # Compute current water level from volume
+    current_level_m = level_from_volume(float(current_water_volume))
+
     # Note: outflow is calculated based on old pump state, think about it!
-    total_outflow_m3_15min = pump_state.total_suction_m3_15min
+    total_outflow_m3_15min = pump_state.total_suction_m3_15min(current_level_m)
 
     new_pump_state = pump_state
 
     return SimulationState(
         outflow_m3_15min=total_outflow_m3_15min,
         water_volume_m3=current_water_volume,
-        water_level_from_water_volume_m=level_from_volume(float(current_water_volume)),
+        water_level_from_water_volume_m=current_level_m,
         pump_state=new_pump_state,
     )
 
@@ -184,6 +187,8 @@ def run(dataframe: pandas.DataFrame, initial_water_volume_m3: Decimal) -> None:
             pump_state=pump_state,
         )
 
+        
+
         assert (
             altered_state.water_level_from_water_volume_m < 8.00
         ), "Water level exceeded safe limit!"
@@ -219,14 +224,17 @@ def run(dataframe: pandas.DataFrame, initial_water_volume_m3: Decimal) -> None:
             print("shitfuckshit")
             break
 
-        print(round_number)
-        print(f"outflow m3 15min {altered_state.outflow_m3_15min}")
-        print(f"water_volume_m3  {altered_state.water_volume_m3}")
 
-        for pump in altered_state.pump_state.pumps:
-            print(
-                f"ID: {pump.id}; {pump.pump_type}; Active: {pump.is_active}; Total time on: {format_duration_from_minutes(pump.cumulative_time_minutes)}"
-            )
+        
+        # print(round_number)
+        print(f"inflow m3 15min {row["inflow_to_tunnel_m3_per_15min"]}")
+        print(f"outflow m3 15min {altered_state.outflow_m3_15min}")
+        print(f"water_level_m  {altered_state.water_level_from_water_volume_m}")
+
+        # for pump in altered_state.pump_state.pumps:
+        #     print(
+        #         f"ID: {pump.id}; {pump.pump_type}; Active: {pump.is_active}; Total time on: {format_duration_from_minutes(pump.cumulative_time_minutes)}"
+        #     )
 
         print()
 
