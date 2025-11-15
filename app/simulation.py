@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from app.pump import Pump, PumpType, PumpState, toggle_pump
 from app.util import format_duration_from_minutes
+from app.water_level import level_from_volume
 
 """
 TODO:
@@ -24,6 +25,7 @@ TODO:
 class SimulationState(BaseModel):
     outflow_m3_15min: Decimal
     water_volume_m3: Decimal
+    water_level_from_water_volume_m: float
     pump_state: PumpState
 
 
@@ -45,6 +47,7 @@ def run_step(
     return SimulationState(
         outflow_m3_15min=total_outflow_m3_15min,
         water_volume_m3=current_water_volume,
+        water_level_from_water_volume_m=level_from_volume(float(current_water_volume)),
         pump_state=new_pump_state,
     )
 
@@ -59,6 +62,7 @@ def water_level_from_water_volume(water_level_m: Decimal) -> Decimal:
 class LogEntry(BaseModel):
     timestamp: datetime
     water_volume_m3: Decimal
+    water_level_from_water_volume_m: float
     inflow_to_tunnel_m3_15min: Decimal
     outflow_m3_15min: Decimal
     pump_state: PumpState
@@ -155,6 +159,7 @@ def run(dataframe: pandas.DataFrame, initial_water_volume_m3: Decimal) -> None:
                 dataframe.iloc[0]["inflow_to_tunnel_m3_per_15min"]
             ),
             outflow_m3_15min=outflow,
+            water_level_from_water_volume_m=level_from_volume(float(water_volume_m3)),
             pump_state=pump_state,
             electricity_price_eur_cent_per_kwh=Decimal(
                 dataframe.iloc[0]["electricity_price_eur_cent_per_kwh"]
@@ -176,11 +181,17 @@ def run(dataframe: pandas.DataFrame, initial_water_volume_m3: Decimal) -> None:
             water_volume_m3=water_volume_m3,
             pump_state=pump_state,
         )
+
+        assert (
+            altered_state.water_level_from_water_volume_m < 8.00
+        ), "Water level exceeded safe limit!"
+
         logs.append(
             LogEntry(
                 timestamp=row["timestamp"],
                 water_volume_m3=altered_state.water_volume_m3,
                 outflow_m3_15min=altered_state.outflow_m3_15min,
+                water_level_from_water_volume_m=altered_state.water_level_from_water_volume_m,
                 inflow_to_tunnel_m3_15min=Decimal(row["inflow_to_tunnel_m3_per_15min"]),
                 pump_state=altered_state.pump_state,
                 electricity_price_eur_cent_per_kwh=Decimal(
@@ -227,6 +238,7 @@ def run(dataframe: pandas.DataFrame, initial_water_volume_m3: Decimal) -> None:
         fieldnames_and_labels = {
             "timestamp": "Time stamp",
             "water_volume_m3": "Water volume in tunnel V (m3)",
+            "water_level_from_water_volume_m": "Water level in tunnel L1 (m)",
             "inflow_to_tunnel_m3_15min": "Inflow to tunnel F1 (m3/15 min)",
             "outflow_m3_15min": "Outflow (m3/15 min)",
             **{
@@ -250,6 +262,7 @@ def run(dataframe: pandas.DataFrame, initial_water_volume_m3: Decimal) -> None:
             row_dict = {
                 "timestamp": log.timestamp,
                 "water_volume_m3": log.water_volume_m3,
+                "water_level_from_water_volume_m": log.water_level_from_water_volume_m,
                 "inflow_to_tunnel_m3_15min": log.inflow_to_tunnel_m3_15min,
                 "outflow_m3_15min": log.outflow_m3_15min,
                 "electricity_price_eur_cent_per_kwh": log.electricity_price_eur_cent_per_kwh,
