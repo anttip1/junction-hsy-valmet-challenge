@@ -61,12 +61,13 @@ class LogEntry(BaseModel):
     inflow_to_tunnel_m3_15min: Decimal
     outflow_m3_15min: Decimal
     pump_state: PumpState
+    electricity_price_eur_cent_per_kwh: Decimal
 
 
 def run(dataframe: pandas.DataFrame, initial_water_volume_m3: Decimal) -> None:
     # TODO:
     # Does the initial state assume that outflow starts from zero or from an initial value?
-
+    utcnow = datetime.now()
     outflow = Decimal(0)
     water_volume_m3 = initial_water_volume_m3
 
@@ -86,6 +87,9 @@ def run(dataframe: pandas.DataFrame, initial_water_volume_m3: Decimal) -> None:
             ),
             outflow_m3_15min=outflow,
             pump_state=pump_state,
+            electricity_price_eur_cent_per_kwh=Decimal(
+                dataframe.iloc[0]["electricity_price_eur_cent_per_kwh"]
+            ),
         )
     ]
 
@@ -107,6 +111,9 @@ def run(dataframe: pandas.DataFrame, initial_water_volume_m3: Decimal) -> None:
                 outflow_m3_15min=altered_state.outflow_m3_15min,
                 inflow_to_tunnel_m3_15min=Decimal(row["inflow_to_tunnel_m3_per_15min"]),
                 pump_state=altered_state.pump_state,
+                electricity_price_eur_cent_per_kwh=Decimal(
+                    row["electricity_price_eur_cent_per_kwh"]
+                ),
             )
         )
         round_number += 1
@@ -122,7 +129,9 @@ def run(dataframe: pandas.DataFrame, initial_water_volume_m3: Decimal) -> None:
         print(altered_state)
         print()
 
-    with open("simulation_output.csv", "w") as f:
+    with open(
+        f"simulation_output_{utcnow.hour}_{utcnow.minute}_{utcnow.second}.csv", "w"
+    ) as filepointer:
 
         # Create fieldnames dynamically for all the pumps that were logged
 
@@ -137,17 +146,18 @@ def run(dataframe: pandas.DataFrame, initial_water_volume_m3: Decimal) -> None:
             "inflow_to_tunnel_m3_15min": "Inflow to tunnel F1 (m3/15 min)",
             "outflow_m3_15min": "Outflow (m3/15 min)",
             **{
-                f"pump_{pump_id}_power_kw": f"Pump {pump_id} power (kW)"
+                f"pump_{pump_id}_power_kw": f"Pump efficiency {pump_id} (kW)"
                 for pump_id in pump_ids
             },
             **{
-                f"pump_{pump_id}_flow_m3_15min": f"Pump {pump_id} flow (m3/15 min)"
+                f"pump_{pump_id}_flow_m3_15min": f"Pump flow {pump_id} (m3/15 min)"
                 for pump_id in pump_ids
             },
+            "electricity_price_eur_cent_per_kwh": "Electricity price (eur cent/kWh)",
         }
 
         csv_dictwriter = csv.DictWriter(
-            f,
+            filepointer,
             fieldnames=list(fieldnames_and_labels.keys()),
         )
         csv_dictwriter.writerow(fieldnames_and_labels)
@@ -157,6 +167,7 @@ def run(dataframe: pandas.DataFrame, initial_water_volume_m3: Decimal) -> None:
                 "water_volume_m3": log.water_volume_m3,
                 "inflow_to_tunnel_m3_15min": log.inflow_to_tunnel_m3_15min,
                 "outflow_m3_15min": log.outflow_m3_15min,
+                "electricity_price_eur_cent_per_kwh": log.electricity_price_eur_cent_per_kwh,
             }
             for pump in log.pump_state.pumps:
                 row_dict[f"pump_{pump.id}_power_kw"] = pump.current_power_kw
