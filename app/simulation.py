@@ -69,7 +69,6 @@ class LogEntry(BaseModel):
     electricity_price_eur_cent_per_kwh: Decimal
     electricity_price_eur_cent_per_kwh_high: Decimal
 
-
 def change_pump_state(
     pump_state: PumpState,
     water_volume_m3: Decimal,
@@ -107,6 +106,9 @@ def change_pump_state(
         return PumpState(pumps=new_pump_state)
 
     if water_volume_m3 < lower_water_level_threshold:
+        if sum(p.is_active for p in pump_state.pumps) == 1:
+            return pump_state
+
         next_large_on = next(
             (
                 p
