@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 
 from app.pump import Pump, PumpType, PumpState, toggle_pump
+from app.util import format_duration_from_minutes
 
 """
 TODO:
@@ -57,6 +58,7 @@ def water_level_from_water_volume(water_level_m: Decimal) -> Decimal:
 def change_pump_state(
     pump_state: PumpState,
     water_volume_m3: Decimal,
+    timestamp: datetime,
 ) -> PumpState:
     upper_water_level_threshold = 100_000
     lower_water_level_threshold = 90_000
@@ -80,9 +82,7 @@ def change_pump_state(
             print("All large pumps are already active! FUCK")
             return pump_state
 
-        set_on = toggle_pump(
-            pump=large_off_that_has_least_runtime, timestamp=datetime.now()
-        )
+        set_on = toggle_pump(pump=large_off_that_has_least_runtime, timestamp=timestamp)
 
         new_pump_state = [
             *[p for p in pump_state.pumps if p.id is not set_on.id],
@@ -104,7 +104,7 @@ def change_pump_state(
         if not next_large_on:
             return pump_state
 
-        set_off = toggle_pump(pump=next_large_on, timestamp=datetime.now())
+        set_off = toggle_pump(pump=next_large_on, timestamp=timestamp)
 
         new_pump_state = [
             *[p for p in pump_state.pumps if p.id is not set_off.id],
@@ -125,11 +125,7 @@ def run(dataframe: pandas.DataFrame, initial_water_volume_m3: Decimal) -> None:
 
     pump_state = PumpState(
         pumps=[
-            Pump(
-                id="1.1",
-                pump_type=PumpType.SMALL,
-                current_run_time_start=datetime.now(),
-            ),
+            Pump(id="1.1", pump_type=PumpType.SMALL, current_run_time_start=None),
             Pump(id="2.1", pump_type=PumpType.SMALL, current_run_time_start=None),
             Pump(id="2.2", pump_type=PumpType.LARGE, current_run_time_start=None),
             Pump(id="2.3", pump_type=PumpType.LARGE, current_run_time_start=None),
@@ -148,8 +144,10 @@ def run(dataframe: pandas.DataFrame, initial_water_volume_m3: Decimal) -> None:
             water_volume_m3=water_volume_m3,
             pump_state=pump_state,
         )
+        timestamp: pandas.Timestamp = row["timestamp"]  # pyright: ignore
+        dt = timestamp.to_pydatetime()
         pump_state = change_pump_state(
-            pump_state=pump_state, water_volume_m3=water_volume_m3
+            pump_state=pump_state, water_volume_m3=water_volume_m3, timestamp=dt
         )
 
         round_number += 1
@@ -166,6 +164,8 @@ def run(dataframe: pandas.DataFrame, initial_water_volume_m3: Decimal) -> None:
         print(f"water_volume_m3  {altered_state.water_volume_m3}")
 
         for pump in altered_state.pump_state.pumps:
-            print(f"{pump.id} {pump.pump_type} {pump.is_active}")
+            print(
+                f"ID: {pump.id}; {pump.pump_type}; Active: {pump.is_active}; Total time on: {format_duration_from_minutes(pump.cumulative_time_minutes)}"
+            )
 
         print()
