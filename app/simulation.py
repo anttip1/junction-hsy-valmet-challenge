@@ -208,8 +208,10 @@ def change_pump_state_constant_flow(
     water_volume_m3: Decimal,
     inflow_to_tunnel_m3_15min: Decimal,
     timestamp: datetime,
+    current_price_eur_cent_per_kwh: Decimal,
+    future_prices_eur_cent_per_kwh: list[Decimal],
 ) -> PumpState:
-    """Balance pump usage for steady outflow while enforcing operational constraints."""
+    """Balance pump usage for steady outflow while enforcing operational constraints and energy-cost awareness."""
 
     min_runtime = timedelta(hours=2)
     rain_threshold = Decimal("2000")
@@ -222,6 +224,26 @@ def change_pump_state_constant_flow(
     ]
     max_capacity = sum(pump_capacities, Decimal("0"))
     min_non_zero_capacity = min(pump_capacities)
+
+    sorted_prices = (
+        sorted(future_prices_eur_cent_per_kwh)
+        if future_prices_eur_cent_per_kwh
+        else [current_price_eur_cent_per_kwh]
+    )
+    has_price_forecast = bool(future_prices_eur_cent_per_kwh)
+
+    def _quantile(sorted_values: list[Decimal], fraction: float) -> Decimal:
+        if not sorted_values:
+            return current_price_eur_cent_per_kwh
+        if len(sorted_values) == 1:
+            return sorted_values[0]
+        index = int((len(sorted_values) - 1) * fraction)
+        return sorted_values[index]
+
+    future_min_price = sorted_prices[0]
+    future_avg_price = sum(sorted_prices, Decimal("0")) / Decimal(len(sorted_prices))
+    future_q25_price = _quantile(sorted_prices, 0.25)
+    future_q75_price = _quantile(sorted_prices, 0.75)
 
     level_m = Decimal(str(level_from_volume(float(water_volume_m3))))
     low_inflow = inflow_to_tunnel_m3_15min <= rain_threshold
@@ -262,6 +284,35 @@ def change_pump_state_constant_flow(
     else:
         baseline_target = _round_to_increment(updated_average, flow_increment)
         baseline_target = max(min_non_zero_capacity, min(baseline_target, max_capacity))
+        price_bias_steps = 0
+        if not pending_drain and has_price_forecast:
+            if current_price_eur_cent_per_kwh <= future_q25_price:
+                price_bias_steps = 1
+            elif (
+                current_price_eur_cent_per_kwh >= future_q75_price
+                and low_inflow
+                and level_m < Decimal("7.0")
+            ):
+                price_bias_steps = -1
+            elif (
+                current_price_eur_cent_per_kwh > future_avg_price
+                and current_price_eur_cent_per_kwh > future_min_price
+                and low_inflow
+                and level_m < Decimal("6.5")
+            ):
+                price_bias_steps = -1
+            elif (
+                current_price_eur_cent_per_kwh <= future_avg_price
+                and current_price_eur_cent_per_kwh <= future_min_price
+            ):
+                price_bias_steps = 1
+
+        if price_bias_steps:
+            baseline_target += Decimal(price_bias_steps) * flow_increment
+            baseline_target = max(
+                min_non_zero_capacity, min(baseline_target, max_capacity)
+            )
+
         delta = baseline_target - current_target
         if delta > flow_increment:
             desired_target = current_target + flow_increment
@@ -408,6 +459,11 @@ def run(dataframe: pandas.DataFrame, initial_water_volume_m3: Decimal) -> None:
             altered_state.water_level_from_water_volume_m < 8.00
         ), "Water level exceeded safe limit!"
 
+        current_price_normal = Decimal(str(row["electricity_price_eur_cent_per_kwh"]))
+        current_price_high = Decimal(
+            str(row["electricity_price_eur_cent_per_kwh_high"])
+        )
+
         logs.append(
             LogEntry(
                 timestamp=row["timestamp"],
@@ -416,21 +472,30 @@ def run(dataframe: pandas.DataFrame, initial_water_volume_m3: Decimal) -> None:
                 water_level_from_water_volume_m=altered_state.water_level_from_water_volume_m,
                 inflow_to_tunnel_m3_15min=Decimal(row["inflow_to_tunnel_m3_per_15min"]),
                 pump_state=altered_state.pump_state,
-                electricity_price_eur_cent_per_kwh=Decimal(
-                    row["electricity_price_eur_cent_per_kwh"]
-                ),
-                electricity_price_eur_cent_per_kwh_high=Decimal(
-                    row["electricity_price_eur_cent_per_kwh_high"]
-                ),
+                electricity_price_eur_cent_per_kwh=current_price_normal,
+                electricity_price_eur_cent_per_kwh_high=current_price_high,
             )
         )
         timestamp: pandas.Timestamp = row["timestamp"]  # pyright: ignore
         dt = timestamp.to_pydatetime()
+        window_end = timestamp + pandas.Timedelta(hours=24)
+        future_mask = (dataframe["timestamp"] > timestamp) & (
+            dataframe["timestamp"] <= window_end
+        )
+        future_prices_series = dataframe.loc[
+            future_mask, "electricity_price_eur_cent_per_kwh"
+        ].dropna()
+        future_prices_normal = [
+            Decimal(str(value)) for value in future_prices_series.tolist()
+        ]
+
         pump_state = change_pump_state_constant_flow(
             pump_state=pump_state,
             water_volume_m3=water_volume_m3,
             inflow_to_tunnel_m3_15min=Decimal(row["inflow_to_tunnel_m3_per_15min"]),
             timestamp=dt,
+            current_price_eur_cent_per_kwh=current_price_normal,
+            future_prices_eur_cent_per_kwh=future_prices_normal,
         )
 
         round_number += 1
