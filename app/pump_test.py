@@ -5,7 +5,7 @@ from app.pump import Pump, PumpType, toggle_pump
 class TestPump:
     def test_pump_on_cumulative_time_is_calculated_correct(self) -> None:
         pump = Pump(
-            id=1,
+            id="2.1",
             pump_type=PumpType.LARGE,
             current_run_time_start=None,
             activation_times=[],
