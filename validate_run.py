@@ -1,4 +1,7 @@
+import argparse
+import os
 from statistics import pstdev
+
 import pandas as pd
 
 
@@ -138,4 +141,16 @@ def main(file_path: str) -> None:
 
 
 if __name__ == "__main__":
-    main("Hackathon_HSY_data.csv")
+    parser = argparse.ArgumentParser(description="Validate pump run data.")
+    parser.add_argument(
+        "filename",
+        nargs="?",
+        default="Hackathon_HSY_data.csv",
+        help="Path to the CSV file containing pump readings.",
+    )
+    args = parser.parse_args()
+    if not os.path.isfile(args.filename):
+        print(f"File not found: {args.filename}")
+        exit(1)
+
+    main(args.filename)
