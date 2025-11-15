@@ -4,6 +4,16 @@ from enum import Enum
 from pydantic import BaseModel
 
 
+"""
+
+TODO:
+    - powah latah
+    - millon polkastaan kayntiin (maailman tappiin)
+    - 2h limitti harveli
+    - 24h tyhjennys
+"""
+
+
 class PumpActivation(BaseModel):
     start_time: datetime
     end_time: datetime
@@ -15,7 +25,7 @@ class PumpType(str, Enum):
 
 
 class Pump(BaseModel):
-    id: int
+    id: str
     pump_type: PumpType
 
     # this is ste is pump is currently running, it is None if pump is off
@@ -77,7 +87,6 @@ def toggle_pump(pump: Pump, timestamp: datetime) -> Pump:
 
 
 class PumpState(BaseModel):
-    # TODO: remove small and large pumps
     pumps: list[Pump]
 
     @property
