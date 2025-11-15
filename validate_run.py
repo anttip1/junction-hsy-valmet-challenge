@@ -1,3 +1,4 @@
+from statistics import pstdev
 import pandas as pd
 
 
@@ -15,17 +16,52 @@ def calculate_one_pump_runtime_hours(
     return is_running.sum() * time_step_hours
 
 
+def gini_coefficient(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    sorted_values = sorted(values)
+    total = sum(sorted_values)
+    if total == 0:
+        return 0.0
+    n = len(sorted_values)
+    weighted_sum = sum((index + 1) * value for index, value in enumerate(sorted_values))
+    return (2 * weighted_sum) / (n * total) - (n + 1) / n
+
+
 def calculate_all_pumps_runtime_hours(df: pd.DataFrame) -> None:
     pump_power_columns = get_pump_power_columns(df)
     time_step_hours = 0.25  # 15-minute intervals
+    runtimes: list[tuple[str, float]] = []
     print("Pump runtimes (hours):")
     for column_name in pump_power_columns:
         runtime_hours = calculate_one_pump_runtime_hours(
             df, column_name, time_step_hours
         )
+        runtimes.append((column_name, runtime_hours))
         print(
             f"\t{column_name.replace('Pump efficiency', 'Pump').replace('(kW)', '')}: {runtime_hours:,.2f} h"
         )
+    print_runtime_balance_metrics(runtimes)
+
+
+def print_runtime_balance_metrics(runtimes: list[tuple[str, float]]) -> None:
+    runtime_values = [hours for _, hours in runtimes]
+    if not runtime_values:
+        print("No pump runtime data available for balance metrics.")
+        return
+    min_hours = min(runtime_values)
+    max_hours = max(runtime_values)
+    range_hours = max_hours - min_hours
+    print(
+        f"Runtime range: {min_hours:,.2f} h – {max_hours:,.2f} h (Δ {range_hours:,.2f} h)"
+    )
+    if len(runtime_values) > 1:
+        std_hours = pstdev(runtime_values)
+    else:
+        std_hours = 0.0
+    print(f"Runtime standard deviation: {std_hours:,.2f} h")
+    gini = gini_coefficient(runtime_values)
+    print(f"Runtime Gini coefficient: {gini:.4f}")
 
 
 def calculate_energy_costs(df: pd.DataFrame) -> None:
