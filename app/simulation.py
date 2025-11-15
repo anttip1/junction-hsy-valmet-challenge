@@ -1,3 +1,4 @@
+import csv
 from datetime import datetime
 from decimal import Decimal
 import pandas
@@ -54,6 +55,14 @@ def water_level_from_water_volume(water_level_m: Decimal) -> Decimal:
     return water_level_m
 
 
+class LogEntry(BaseModel):
+    timestamp: datetime
+    water_volume_m3: Decimal
+    inflow_to_tunnel_m3_15min: Decimal
+    outflow_m3_15min: Decimal
+    pump_state: PumpState
+
+
 def run(dataframe: pandas.DataFrame, initial_water_volume_m3: Decimal) -> None:
     # TODO:
     # Does the initial state assume that outflow starts from zero or from an initial value?
@@ -68,16 +77,38 @@ def run(dataframe: pandas.DataFrame, initial_water_volume_m3: Decimal) -> None:
 
     pump_state = PumpState(pumps=[large_pump, small_pump])
 
+    logs: list[LogEntry] = [
+        LogEntry(
+            timestamp=dataframe.iloc[0]["timestamp"],
+            water_volume_m3=water_volume_m3,
+            inflow_to_tunnel_m3_15min=Decimal(
+                dataframe.iloc[0]["inflow_to_tunnel_m3_per_15min"]
+            ),
+            outflow_m3_15min=outflow,
+            pump_state=pump_state,
+        )
+    ]
+
     round_number = 0
 
-    for _, row in dataframe.iterrows():
+    for _, row in dataframe[1:].iterrows():
         altered_state = run_step(
-            inflow_to_tunnel_m3_15min=Decimal(row["inflow_to_tunnel_m3_per_15min"]),  # pyright: ignore
+            inflow_to_tunnel_m3_15min=Decimal(
+                row["inflow_to_tunnel_m3_per_15min"]
+            ),  # pyright: ignore
             prev_outflow_m3_15min=outflow,
             water_volume_m3=water_volume_m3,
             pump_state=pump_state,
         )
-
+        logs.append(
+            LogEntry(
+                timestamp=row["timestamp"],
+                water_volume_m3=altered_state.water_volume_m3,
+                outflow_m3_15min=altered_state.outflow_m3_15min,
+                inflow_to_tunnel_m3_15min=Decimal(row["inflow_to_tunnel_m3_per_15min"]),
+                pump_state=altered_state.pump_state,
+            )
+        )
         round_number += 1
 
         outflow = altered_state.outflow_m3_15min
@@ -85,8 +116,49 @@ def run(dataframe: pandas.DataFrame, initial_water_volume_m3: Decimal) -> None:
 
         if altered_state.water_volume_m3 > 225000:
             print("shitfuckshit")
-            raise Exception("Water volume exceeded maximum limit!")
+            break
 
         print(round_number)
         print(altered_state)
         print()
+
+    with open("simulation_output.csv", "w") as f:
+
+        # Create fieldnames dynamically for all the pumps that were logged
+
+        pump_ids = sorted(set(pump.id for log in logs for pump in log.pump_state.pumps))
+
+        # pump_power_fieldnames = [f"pump_{pump_id}_power_kw" for pump_id in pump_ids]
+        # pump_flow_fieldnames = [f"pump_{pump_id}_flow_m3_15min" for pump_id in pump_ids]
+
+        fieldnames_and_labels = {
+            "timestamp": "Time stamp",
+            "water_volume_m3": "Water volume in tunnel V (m3)",
+            "inflow_to_tunnel_m3_15min": "Inflow to tunnel F1 (m3/15 min)",
+            "outflow_m3_15min": "Outflow (m3/15 min)",
+            **{
+                f"pump_{pump_id}_power_kw": f"Pump {pump_id} power (kW)"
+                for pump_id in pump_ids
+            },
+            **{
+                f"pump_{pump_id}_flow_m3_15min": f"Pump {pump_id} flow (m3/15 min)"
+                for pump_id in pump_ids
+            },
+        }
+
+        csv_dictwriter = csv.DictWriter(
+            f,
+            fieldnames=list(fieldnames_and_labels.keys()),
+        )
+        csv_dictwriter.writerow(fieldnames_and_labels)
+        for log in logs:
+            row_dict = {
+                "timestamp": log.timestamp,
+                "water_volume_m3": log.water_volume_m3,
+                "inflow_to_tunnel_m3_15min": log.inflow_to_tunnel_m3_15min,
+                "outflow_m3_15min": log.outflow_m3_15min,
+            }
+            for pump in log.pump_state.pumps:
+                row_dict[f"pump_{pump.id}_power_kw"] = pump.current_power_kw
+                row_dict[f"pump_{pump.id}_flow_m3_15min"] = pump.pump_capacity_m3_15min
+            csv_dictwriter.writerow(row_dict)
