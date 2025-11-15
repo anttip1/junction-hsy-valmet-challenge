@@ -28,24 +28,47 @@ def gini_coefficient(values: list[float]) -> float:
     return (2 * weighted_sum) / (n * total) - (n + 1) / n
 
 
+def count_short_runtime_events(
+    df: pd.DataFrame,
+    pump_power_column: str,
+    time_step_hours: float,
+    threshold_hours: float = 2.0,
+) -> int:
+    """Count contiguous on-periods shorter than the given hour threshold."""
+    is_running = df[pump_power_column].fillna(0) > 0
+    short_events = 0
+    current_steps = 0
+    for running in is_running:
+        if running:
+            current_steps += 1
+        else:
+            if 0 < current_steps * time_step_hours < threshold_hours:
+                short_events += 1
+            current_steps = 0
+    if 0 < current_steps * time_step_hours < threshold_hours:
+        short_events += 1
+    return short_events
+
+
 def calculate_all_pumps_runtime_hours(df: pd.DataFrame) -> None:
     pump_power_columns = get_pump_power_columns(df)
     time_step_hours = 0.25  # 15-minute intervals
-    runtimes: list[tuple[str, float]] = []
+    runtimes: list[tuple[str, float, int]] = []
     print("Pump runtimes (hours):")
     for column_name in pump_power_columns:
         runtime_hours = calculate_one_pump_runtime_hours(
             df, column_name, time_step_hours
         )
-        runtimes.append((column_name, runtime_hours))
+        short_run_count = count_short_runtime_events(df, column_name, time_step_hours)
+        runtimes.append((column_name, runtime_hours, short_run_count))
         print(
-            f"\t{column_name.replace('Pump efficiency', 'Pump').replace('(kW)', '')}: {runtime_hours:,.2f} h"
+            f"\t{column_name.replace('Pump efficiency', 'Pump').replace('(kW)', '')}: {runtime_hours:,.2f} h (short runs <2h: {short_run_count})"
         )
     print_runtime_balance_metrics(runtimes)
 
 
-def print_runtime_balance_metrics(runtimes: list[tuple[str, float]]) -> None:
-    runtime_values = [hours for _, hours in runtimes]
+def print_runtime_balance_metrics(runtimes: list[tuple[str, float, int]]) -> None:
+    runtime_values = [hours for _, hours, _ in runtimes]
     if not runtime_values:
         print("No pump runtime data available for balance metrics.")
         return
