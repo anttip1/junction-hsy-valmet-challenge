@@ -1,3 +1,4 @@
 pydantic==2.12.4
 ruff==0.8.1
 pyright==1.1.391
+pandas==2.3.3
