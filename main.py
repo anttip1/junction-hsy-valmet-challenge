@@ -14,6 +14,7 @@ def main() -> None:
         [
             "Time stamp",
             "Electricity price 2: normal (EUR/kWh)",
+            "Electricity price 1: high (EUR/kWh)",
             "Inflow to tunnel F1 (m3/15 min)",
         ]
     ]
@@ -22,6 +23,7 @@ def main() -> None:
         columns={
             "Time stamp": "timestamp",
             "Electricity price 2: normal (EUR/kWh)": "electricity_price_eur_cent_per_kwh",
+            "Electricity price 1: high (EUR/kWh)": "electricity_price_eur_cent_per_kwh_high",
             "Inflow to tunnel F1 (m3/15 min)": "inflow_to_tunnel_m3_per_15min",
         },
         inplace=True,

@@ -63,6 +63,7 @@ class LogEntry(BaseModel):
     outflow_m3_15min: Decimal
     pump_state: PumpState
     electricity_price_eur_cent_per_kwh: Decimal
+    electricity_price_eur_cent_per_kwh_high: Decimal
 
 
 def change_pump_state(
@@ -158,6 +159,9 @@ def run(dataframe: pandas.DataFrame, initial_water_volume_m3: Decimal) -> None:
             electricity_price_eur_cent_per_kwh=Decimal(
                 dataframe.iloc[0]["electricity_price_eur_cent_per_kwh"]
             ),
+            electricity_price_eur_cent_per_kwh_high=Decimal(
+                dataframe.iloc[0]["electricity_price_eur_cent_per_kwh_high"]
+            ),
         )
     ]
 
@@ -181,6 +185,9 @@ def run(dataframe: pandas.DataFrame, initial_water_volume_m3: Decimal) -> None:
                 pump_state=altered_state.pump_state,
                 electricity_price_eur_cent_per_kwh=Decimal(
                     row["electricity_price_eur_cent_per_kwh"]
+                ),
+                electricity_price_eur_cent_per_kwh_high=Decimal(
+                    row["electricity_price_eur_cent_per_kwh_high"]
                 ),
             )
         )
@@ -230,7 +237,8 @@ def run(dataframe: pandas.DataFrame, initial_water_volume_m3: Decimal) -> None:
                 f"pump_{pump_id}_flow_m3_15min": f"Pump flow {pump_id} (m3/15 min)"
                 for pump_id in pump_ids
             },
-            "electricity_price_eur_cent_per_kwh": "Electricity price (eur cent/kWh)",
+            "electricity_price_eur_cent_per_kwh": "Electricity price 2: normal (EUR/kWh)",
+            "electricity_price_eur_cent_per_kwh_high": "Electricity price 1: high (EUR/kWh)",
         }
 
         csv_dictwriter = csv.DictWriter(
@@ -245,6 +253,7 @@ def run(dataframe: pandas.DataFrame, initial_water_volume_m3: Decimal) -> None:
                 "inflow_to_tunnel_m3_15min": log.inflow_to_tunnel_m3_15min,
                 "outflow_m3_15min": log.outflow_m3_15min,
                 "electricity_price_eur_cent_per_kwh": log.electricity_price_eur_cent_per_kwh,
+                "electricity_price_eur_cent_per_kwh_high": log.electricity_price_eur_cent_per_kwh_high,
             }
             for pump in log.pump_state.pumps:
                 row_dict[f"pump_{pump.id}_power_kw"] = pump.current_power_kw
