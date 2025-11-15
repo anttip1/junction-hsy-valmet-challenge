@@ -91,7 +91,6 @@ def print_runtime_balance_metrics(runtimes: list[tuple[str, float, int]]) -> Non
 
 
 def calculate_energy_costs(df: pd.DataFrame) -> None:
-
     pump_power_columns = get_pump_power_columns(df)
 
     electricity_price_high_column_name = "Electricity price 1: high (EUR/kWh)"  # The prices are actually in EUR cent/kWh. The label is wrong

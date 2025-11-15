@@ -44,3 +44,6 @@ qa: install
 	@echo "\nRunning pyright..."
 	@export PYRIGHT_PYTHON_FORCE_VERSION=latest; pyright .
 
+.PHONY: test
+test: install
+	@pytest  app

@@ -1,9 +1,10 @@
+from datetime import datetime
 from decimal import Decimal
 import pandas
 from pydantic import BaseModel
 
 
-from app.pump import SmallPump, LargePump, PumpState
+from app.pump import Pump, PumpType, PumpState
 
 """
 TODO:
@@ -60,23 +61,18 @@ def run(dataframe: pandas.DataFrame, initial_water_volume_m3: Decimal) -> None:
     outflow = Decimal(0)
     water_volume_m3 = initial_water_volume_m3
 
-    pump_state = PumpState(
-        large_pumps=[
-            LargePump(is_active=True),
-        ],
-        small_pumps=[
-            SmallPump(
-                is_active=False,
-            )
-        ],
+    large_pump = Pump(
+        id=1, pump_type=PumpType.LARGE, current_run_time_start=datetime.now()
     )
+    small_pump = Pump(id=2, pump_type=PumpType.SMALL, current_run_time_start=None)
+
+    pump_state = PumpState(pumps=[large_pump, small_pump])
 
     round_number = 0
 
     for _, row in dataframe.iterrows():
-
         altered_state = run_step(
-            inflow_to_tunnel_m3_15min=Decimal(row["inflow_to_tunnel_m3_per_15min"]),
+            inflow_to_tunnel_m3_15min=Decimal(row["inflow_to_tunnel_m3_per_15min"]),  # pyright: ignore
             prev_outflow_m3_15min=outflow,
             water_volume_m3=water_volume_m3,
             pump_state=pump_state,
