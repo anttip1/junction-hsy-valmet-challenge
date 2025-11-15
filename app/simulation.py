@@ -1,3 +1,4 @@
+import csv
 from datetime import datetime
 from decimal import Decimal
 import pandas
@@ -53,6 +54,16 @@ def water_level_from_water_volume(water_level_m: Decimal) -> Decimal:
     # Mankel level in meters from the volume based on magic func
 
     return water_level_m
+
+
+class LogEntry(BaseModel):
+    timestamp: datetime
+    water_volume_m3: Decimal
+    inflow_to_tunnel_m3_15min: Decimal
+    outflow_m3_15min: Decimal
+    pump_state: PumpState
+    electricity_price_eur_cent_per_kwh: Decimal
+    electricity_price_eur_cent_per_kwh_high: Decimal
 
 
 def change_pump_state(
@@ -119,7 +130,7 @@ def change_pump_state(
 def run(dataframe: pandas.DataFrame, initial_water_volume_m3: Decimal) -> None:
     # TODO:
     # Does the initial state assume that outflow starts from zero or from an initial value?
-
+    utcnow = datetime.now()
     outflow = Decimal(0)
     water_volume_m3 = initial_water_volume_m3
 
@@ -135,14 +146,50 @@ def run(dataframe: pandas.DataFrame, initial_water_volume_m3: Decimal) -> None:
             Pump(id="1.4", pump_type=PumpType.LARGE, current_run_time_start=None),
         ]
     )
+
+    logs: list[LogEntry] = [
+        LogEntry(
+            timestamp=dataframe.iloc[0]["timestamp"],
+            water_volume_m3=water_volume_m3,
+            inflow_to_tunnel_m3_15min=Decimal(
+                dataframe.iloc[0]["inflow_to_tunnel_m3_per_15min"]
+            ),
+            outflow_m3_15min=outflow,
+            pump_state=pump_state,
+            electricity_price_eur_cent_per_kwh=Decimal(
+                dataframe.iloc[0]["electricity_price_eur_cent_per_kwh"]
+            ),
+            electricity_price_eur_cent_per_kwh_high=Decimal(
+                dataframe.iloc[0]["electricity_price_eur_cent_per_kwh_high"]
+            ),
+        )
+    ]
+
     round_number = 0
 
-    for _, row in dataframe.iterrows():
+    for _, row in dataframe[1:].iterrows():
         altered_state = run_step(
-            inflow_to_tunnel_m3_15min=Decimal(row["inflow_to_tunnel_m3_per_15min"]),  # pyright: ignore
+            inflow_to_tunnel_m3_15min=Decimal(
+                row["inflow_to_tunnel_m3_per_15min"]
+            ),  # pyright: ignore
             prev_outflow_m3_15min=outflow,
             water_volume_m3=water_volume_m3,
             pump_state=pump_state,
+        )
+        logs.append(
+            LogEntry(
+                timestamp=row["timestamp"],
+                water_volume_m3=altered_state.water_volume_m3,
+                outflow_m3_15min=altered_state.outflow_m3_15min,
+                inflow_to_tunnel_m3_15min=Decimal(row["inflow_to_tunnel_m3_per_15min"]),
+                pump_state=altered_state.pump_state,
+                electricity_price_eur_cent_per_kwh=Decimal(
+                    row["electricity_price_eur_cent_per_kwh"]
+                ),
+                electricity_price_eur_cent_per_kwh_high=Decimal(
+                    row["electricity_price_eur_cent_per_kwh_high"]
+                ),
+            )
         )
         timestamp: pandas.Timestamp = row["timestamp"]  # pyright: ignore
         dt = timestamp.to_pydatetime()
@@ -157,7 +204,7 @@ def run(dataframe: pandas.DataFrame, initial_water_volume_m3: Decimal) -> None:
 
         if altered_state.water_volume_m3 > 225000:
             print("shitfuckshit")
-            raise Exception("Water volume exceeded maximum limit!")
+            break
 
         print(round_number)
         print(f"outflow m3 15min {altered_state.outflow_m3_15min}")
@@ -169,3 +216,46 @@ def run(dataframe: pandas.DataFrame, initial_water_volume_m3: Decimal) -> None:
             )
 
         print()
+
+    with open(
+        f"simulation_output_{utcnow.hour}_{utcnow.minute}_{utcnow.second}.csv", "w"
+    ) as filepointer:
+
+        # Create fieldnames dynamically for all the pumps that were logged
+
+        pump_ids = sorted(set(pump.id for log in logs for pump in log.pump_state.pumps))
+        fieldnames_and_labels = {
+            "timestamp": "Time stamp",
+            "water_volume_m3": "Water volume in tunnel V (m3)",
+            "inflow_to_tunnel_m3_15min": "Inflow to tunnel F1 (m3/15 min)",
+            "outflow_m3_15min": "Outflow (m3/15 min)",
+            **{
+                f"pump_{pump_id}_power_kw": f"Pump efficiency {pump_id} (kW)"
+                for pump_id in pump_ids
+            },
+            **{
+                f"pump_{pump_id}_flow_m3_15min": f"Pump flow {pump_id} (m3/15 min)"
+                for pump_id in pump_ids
+            },
+            "electricity_price_eur_cent_per_kwh": "Electricity price 2: normal (EUR/kWh)",
+            "electricity_price_eur_cent_per_kwh_high": "Electricity price 1: high (EUR/kWh)",
+        }
+
+        csv_dictwriter = csv.DictWriter(
+            filepointer,
+            fieldnames=list(fieldnames_and_labels.keys()),
+        )
+        csv_dictwriter.writerow(fieldnames_and_labels)
+        for log in logs:
+            row_dict = {
+                "timestamp": log.timestamp,
+                "water_volume_m3": log.water_volume_m3,
+                "inflow_to_tunnel_m3_15min": log.inflow_to_tunnel_m3_15min,
+                "outflow_m3_15min": log.outflow_m3_15min,
+                "electricity_price_eur_cent_per_kwh": log.electricity_price_eur_cent_per_kwh,
+                "electricity_price_eur_cent_per_kwh_high": log.electricity_price_eur_cent_per_kwh_high,
+            }
+            for pump in log.pump_state.pumps:
+                row_dict[f"pump_{pump.id}_power_kw"] = pump.current_power_kw
+                row_dict[f"pump_{pump.id}_flow_m3_15min"] = pump.pump_capacity_m3_15min
+            csv_dictwriter.writerow(row_dict)

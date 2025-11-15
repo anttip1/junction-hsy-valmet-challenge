@@ -54,6 +54,13 @@ class Pump(BaseModel):
             / 60
         )
 
+    @property
+    def current_power_kw(self) -> Decimal:
+        power_kw = (
+            Decimal("400") if self.pump_type == PumpType.LARGE else Decimal("250")
+        )
+        return power_kw if self.is_active else Decimal(0)
+
 
 def toggle_pump(pump: Pump, timestamp: datetime) -> Pump:
     # Set pump off
