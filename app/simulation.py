@@ -1,4 +1,5 @@
 from decimal import Decimal
+import pandas
 from pydantic import BaseModel
 
 
@@ -52,12 +53,12 @@ def water_level_from_water_volume(water_level_m: Decimal) -> Decimal:
     return water_level_m
 
 
-def run() -> None:
+def run(dataframe: pandas.DataFrame, initial_water_volume_m3: Decimal) -> None:
     # TODO:
     # Does the initial state assume that outflow starts from zero or from an initial value?
 
     outflow = Decimal(0)
-    water_volume_m3 = Decimal(2.5)
+    water_volume_m3 = initial_water_volume_m3
 
     pump_state = PumpState(
         large_pumps=[
@@ -72,9 +73,10 @@ def run() -> None:
 
     round_number = 0
 
-    while True:
+    for _, row in dataframe.iterrows():
+
         altered_state = run_step(
-            inflow_to_tunnel_m3_15min=Decimal(1500),
+            inflow_to_tunnel_m3_15min=Decimal(row["inflow_to_tunnel_m3_per_15min"]),
             prev_outflow_m3_15min=outflow,
             water_volume_m3=water_volume_m3,
             pump_state=pump_state,
@@ -87,7 +89,7 @@ def run() -> None:
 
         if altered_state.water_volume_m3 > 225000:
             print("shitfuckshit")
-            break
+            raise Exception("Water volume exceeded maximum limit!")
 
         print(round_number)
         print(altered_state)
