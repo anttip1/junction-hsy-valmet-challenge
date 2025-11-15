@@ -57,7 +57,7 @@ class Pump(BaseModel):
     @property
     def current_power_kw(self) -> Decimal:
         power_kw = (
-            Decimal("400") if self.pump_type == PumpType.LARGE else Decimal("250")
+            Decimal("350") if self.pump_type == PumpType.LARGE else Decimal("200")
         )
         return power_kw if self.is_active else Decimal(0)
 
@@ -88,6 +88,10 @@ def toggle_pump(pump: Pump, timestamp: datetime) -> Pump:
 
 class PumpState(BaseModel):
     pumps: list[Pump]
+    target_outflow_m3_15min: Decimal | None = None
+    average_inflow_m3_15min: Decimal | None = None
+    last_daily_drain_timestamp: datetime | None = None
+    pending_daily_drain: bool = False
 
     @property
     def total_suction_m3_15min(self) -> Decimal:
