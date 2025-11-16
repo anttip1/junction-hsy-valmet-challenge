@@ -50,7 +50,6 @@ class Pump(BaseModel):
 
         L2 = 30.0  # m, fixed plant-side level from assignment
         head_m = max(L2 - float(water_level_m), 1.0)  # avoid zero/negative head
-        
 
         q_m3_per_h = self._flow_from_head(head_m)
         return Decimal(q_m3_per_h / 4.0)
@@ -58,10 +57,7 @@ class Pump(BaseModel):
     def _flow_from_head(self, head_m: float) -> float:
         if self.pump_type == PumpType.LARGE:
             # Example points: (head [m], flow [m3/h])
-            curve = [
-                (15.0, 3000.0),
-                (30.0, 2000.0)
-            ]
+            curve = [(15.0, 3000.0), (30.0, 2000.0)]
         else:
             curve = [
                 (15.0, 1500.0),
@@ -99,7 +95,7 @@ class Pump(BaseModel):
     @property
     def current_power_kw(self) -> Decimal:
         power_kw = (
-            Decimal("400") if self.pump_type == PumpType.LARGE else Decimal("250")
+            Decimal("350") if self.pump_type == PumpType.LARGE else Decimal("200")
         )
         return power_kw if self.is_active else Decimal(0)
 
@@ -130,8 +126,11 @@ def toggle_pump(pump: Pump, timestamp: datetime) -> Pump:
 
 class PumpState(BaseModel):
     pumps: list[Pump]
+    target_outflow_m3_15min: Decimal | None = None
+    average_inflow_m3_15min: Decimal | None = None
+    last_daily_drain_timestamp: datetime | None = None
+    pending_daily_drain: bool = False
 
-    def total_suction_m3_15min(self, water_level_m: float) -> Decimal:
-        return Decimal(
-            sum(p.capacity_m3_15min_at_level(water_level_m) for p in self.pumps)
-        )
+    @property
+    def total_suction_m3_15min(self) -> Decimal:
+        return Decimal(sum([p.pump_capacity_m3_15min for p in self.pumps]))
