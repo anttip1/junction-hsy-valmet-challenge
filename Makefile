@@ -3,10 +3,7 @@
 .PHONY: run
 run:
 	@python3 main.py
-
-.PHONY: validate
-validate:
-	@python3 -m validate_run 
+	 
 .PHONY: install
 install:
 	@pip3 install -r requirements.txt
