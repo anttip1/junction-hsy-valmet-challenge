@@ -91,6 +91,34 @@ def print_runtime_balance_metrics(runtimes: list[tuple[str, float, int]]) -> Non
     print(f"Runtime Gini coefficient: {gini:.4f}")
 
 
+def _compute_energy_cost_components(
+    df: pd.DataFrame,
+) -> tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
+    pump_power_columns = get_pump_power_columns(df)
+    electricity_price_high_column_name = "Electricity price 1: high (EUR/kWh)"  # Prices stored as EUR cent/kWh despite column label
+    electricity_price_normal_column_name = "Electricity price 2: normal (EUR/kWh)"
+
+    time_step_hours = 0.25  # 15-minute intervals
+
+    total_power_kw = df[pump_power_columns].fillna(0).sum(axis=1)
+    energy_kwh_per_step = total_power_kw * time_step_hours
+
+    high_tariff_eur_per_kwh = df[electricity_price_high_column_name].fillna(0) / 100.0
+    normal_tariff_eur_per_kwh = (
+        df[electricity_price_normal_column_name].fillna(0) / 100.0
+    )
+
+    cost_high_eur_per_step = energy_kwh_per_step * high_tariff_eur_per_kwh
+    cost_normal_eur_per_step = energy_kwh_per_step * normal_tariff_eur_per_kwh
+
+    return (
+        df["Time stamp"],
+        energy_kwh_per_step,
+        cost_high_eur_per_step,
+        cost_normal_eur_per_step,
+    )
+
+
 def calculate_energy_costs(df: pd.DataFrame) -> None:
     pump_power_columns = get_pump_power_columns(df)
 
@@ -190,6 +218,44 @@ def plot_water_volume_and_inflow_timeseries(df: pd.DataFrame) -> None:
     plt.show()
 
 
+def plot_outflow_timeseries(df: pd.DataFrame) -> None:
+    time_stamps = df["Time stamp"]
+    outflow_column = "Outflow (m3/15 min)"
+
+    plt.figure(figsize=(12, 6))
+    plt.plot(time_stamps, df[outflow_column], label="Outflow (m3/15 min)")
+
+    plt.xlabel("Time")
+    plt.ylabel("Outflow (m3/15 min)")
+    plt.title("Outflow Timeseries")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_energy_cost_timeseries(df: pd.DataFrame) -> None:
+    time_stamps, _, cost_high_eur_per_step, cost_normal_eur_per_step = (
+        _compute_energy_cost_components(df)
+    )
+
+    plt.figure(figsize=(12, 6))
+    plt.plot(time_stamps, cost_high_eur_per_step, label="High tariff cost (EUR/step)")
+    plt.plot(
+        time_stamps,
+        cost_normal_eur_per_step,
+        label="Normal tariff cost (EUR/step)",
+    )
+
+    plt.xlabel("Time")
+    plt.ylabel("Energy cost per 15 min (EUR)")
+    plt.title("Energy Cost Timeseries")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+
 def main(file_path: str) -> None:
     df = pd.read_csv(file_path)
 
@@ -204,6 +270,10 @@ def main(file_path: str) -> None:
     plot_water_level_timeseries(df)
 
     plot_water_volume_and_inflow_timeseries(df)
+
+    plot_outflow_timeseries(df)
+
+    plot_energy_cost_timeseries(df)
 
 
 if __name__ == "__main__":
