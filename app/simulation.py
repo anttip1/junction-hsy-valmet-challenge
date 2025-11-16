@@ -200,8 +200,6 @@ def change_pump_state(
 
     return PumpState(pumps=updated_pumps)
 
-    return pump_state
-
 
 def change_pump_state_constant_flow(
     pump_state: PumpState,
@@ -213,11 +211,13 @@ def change_pump_state_constant_flow(
 ) -> PumpState:
     """Balance pump usage for steady outflow while enforcing operational constraints and energy-cost awareness."""
 
+    # Operational guardrails and smoothing factors for pump scheduling decisions.
     min_runtime = timedelta(hours=2)
     rain_threshold = Decimal("2000")
     flow_increment = Decimal("375")
     smoothing_alpha = Decimal("0.2")
 
+    # Determine individual pump capacities and global bounds for any activation mask.
     pump_capacities = [
         Decimal("750") if pump.pump_type == PumpType.LARGE else flow_increment
         for pump in pump_state.pumps
@@ -225,6 +225,7 @@ def change_pump_state_constant_flow(
     max_capacity = sum(pump_capacities, Decimal("0"))
     min_non_zero_capacity = min(pump_capacities)
 
+    # Use forecast data when available to bias behaviour toward cheaper future prices.
     sorted_prices = (
         sorted(future_prices_eur_cent_per_kwh)
         if future_prices_eur_cent_per_kwh
@@ -240,15 +241,18 @@ def change_pump_state_constant_flow(
         index = int((len(sorted_values) - 1) * fraction)
         return sorted_values[index]
 
+    # Snapshot key price statistics that inform the pump biasing rules below.
     future_min_price = sorted_prices[0]
     future_avg_price = sum(sorted_prices, Decimal("0")) / Decimal(len(sorted_prices))
     future_q25_price = _quantile(sorted_prices, 0.25)
     future_q75_price = _quantile(sorted_prices, 0.75)
 
+    # Convert current water volume to a level and derive situational flags.
     level_m = Decimal(str(level_from_volume(float(water_volume_m3))))
     low_inflow = inflow_to_tunnel_m3_15min <= rain_threshold
     level_meets_drain_target = level_m <= Decimal("0.5")
 
+    # Track daily draining obligations to guarantee a full flush every 24h.
     last_drain_timestamp = pump_state.last_daily_drain_timestamp
     pending_drain = pump_state.pending_daily_drain
 
@@ -264,6 +268,7 @@ def change_pump_state_constant_flow(
     if drain_due and not level_meets_drain_target:
         pending_drain = True
 
+    # Exponentially smooth inflow to create a stable outflow target.
     previous_avg = pump_state.average_inflow_m3_15min
     if previous_avg is None:
         updated_average = inflow_to_tunnel_m3_15min
@@ -273,12 +278,14 @@ def change_pump_state_constant_flow(
             + inflow_to_tunnel_m3_15min * smoothing_alpha
         )
 
+    # Start from the most recent target or current capacity to avoid abrupt jumps.
     current_target = pump_state.target_outflow_m3_15min
     if current_target is None or current_target == Decimal("0"):
         current_target = pump_state.total_suction_m3_15min
     if current_target == Decimal("0"):
         current_target = min_non_zero_capacity
 
+    # Fulfil pending drains aggressively; otherwise bias toward steady, cost-aware outflow.
     if pending_drain and low_inflow and not level_meets_drain_target:
         desired_target = max_capacity
     else:
@@ -286,6 +293,7 @@ def change_pump_state_constant_flow(
         baseline_target = max(min_non_zero_capacity, min(baseline_target, max_capacity))
         price_bias_steps = 0
         if not pending_drain and has_price_forecast:
+            # Shift the baseline target when prices are favourable or expensive.
             if current_price_eur_cent_per_kwh <= future_q25_price:
                 price_bias_steps = 1
             elif (
@@ -313,6 +321,7 @@ def change_pump_state_constant_flow(
                 min_non_zero_capacity, min(baseline_target, max_capacity)
             )
 
+        # Move toward the baseline gradually to limit pump toggling and turbulence.
         delta = baseline_target - current_target
         if delta > flow_increment:
             desired_target = current_target + flow_increment
@@ -331,6 +340,7 @@ def change_pump_state_constant_flow(
         max_safe_outflow = min_non_zero_capacity
     desired_target = min(desired_target, max_safe_outflow)
 
+    # Reference configuration for evaluating candidate pump activation masks.
     current_mask = [pump.is_active for pump in pump_state.pumps]
     current_capacity = pump_state.total_suction_m3_15min
 
@@ -348,6 +358,7 @@ def change_pump_state_constant_flow(
     best_mask = tuple(current_mask)
     best_score: tuple[Decimal, int, Decimal, int] | None = None
 
+    # Exhaustively search feasible masks, preferring those closest to target with minimal churn.
     for activation_mask in product([False, True], repeat=len(pump_state.pumps)):
         active_count = sum(activation_mask)
         if active_count == 0:
@@ -386,6 +397,7 @@ def change_pump_state_constant_flow(
     if best_mask == tuple(current_mask):
         selected_pumps = list(pump_state.pumps)
     else:
+        # Apply activation changes while recording run histories.
         selected_pumps = []
         for pump, desired in zip(pump_state.pumps, best_mask):
             if pump.is_active == desired:
@@ -396,6 +408,7 @@ def change_pump_state_constant_flow(
     raw_capacity = sum(cap for cap, is_on in zip(pump_capacities, best_mask) if is_on)
     selected_capacity = min(raw_capacity, max_safe_outflow)
 
+    # Return updated pump state with refreshed target and inflow tracking.
     return PumpState(
         pumps=selected_pumps,
         target_outflow_m3_15min=selected_capacity,
