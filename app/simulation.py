@@ -520,14 +520,15 @@ def run(dataframe: pandas.DataFrame, initial_water_volume_m3: Decimal) -> None:
             print("shitfuckshit")
             break
 
-        print(round_number)
+        # print(round_number)
+        print(f"inflow m3 15min {row["inflow_to_tunnel_m3_per_15min"]}")
         print(f"outflow m3 15min {altered_state.outflow_m3_15min}")
-        print(f"water_volume_m3  {altered_state.water_volume_m3}")
+        print(f"water_level_m  {altered_state.water_level_from_water_volume_m}")
 
-        for pump in altered_state.pump_state.pumps:
-            print(
-                f"ID: {pump.id}; {pump.pump_type}; Active: {pump.is_active}; Total time on: {format_duration_from_minutes(pump.cumulative_time_minutes)}"
-            )
+        # for pump in altered_state.pump_state.pumps:
+        #     print(
+        #         f"ID: {pump.id}; {pump.pump_type}; Active: {pump.is_active}; Total time on: {format_duration_from_minutes(pump.cumulative_time_minutes)}"
+        #     )
 
         print()
 
